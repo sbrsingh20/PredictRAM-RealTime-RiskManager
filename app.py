@@ -2,6 +2,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import streamlit as st
+import time
 
 # Function to fetch stock data for multiple stocks
 def fetch_stock_data(stock_symbols, start_date="2022-01-01", end_date="2024-01-01"):
@@ -90,47 +91,59 @@ def calculate_portfolio_turnover(stock_data):
     turnover = daily_returns.sum() / len(stock_data)
     return turnover
 
+# Function to load and display data from Excel
+def load_excel_data(excel_file):
+    # Load Excel file into a pandas DataFrame
+    df = pd.read_excel(excel_file)
+    return df
+
 # Main function to calculate and display the portfolio performance
 def display_portfolio_performance():
-    st.title('Portfolio Performance Dashboard')
+    st.title('Real-Time Portfolio Performance and Stock Correlations Dashboard')
 
     # Get stock symbols as input
     stock_symbols = st.multiselect("Select Stock Symbols", ["TCS", "INFY", "RELIANCE", "HDFC", "BAJFINANCE", "ICICIBANK"])
 
-    # Check if user has selected any stocks
-    if len(stock_symbols) > 0:
-        # Fetch stock data
-        stock_data = fetch_stock_data(stock_symbols)
+    # Load the existing Excel information
+    excel_file = "India_Inflation_CPI_Consumer_Price_Index_IncomeStatement_correlation_results.xlsx"
+    df_excel = load_excel_data(excel_file)
+    st.subheader("Stock Correlations from Excel Data")
+    st.dataframe(df_excel)
+
+    # Create an empty placeholder for real-time updates
+    performance_placeholder = st.empty()
+    
+    # Loop for real-time updates every 30 seconds
+    while True:
+        if len(stock_symbols) > 0:
+            # Fetch stock data
+            stock_data = fetch_stock_data(stock_symbols)
+
+            # Display Portfolio ROI
+            portfolio_roi = calculate_roi(stock_data)
+            sharpe_ratio = calculate_sharpe_ratio(stock_data)
+            sortino_ratio = calculate_sortino_ratio(stock_data)
+
+            # Fetch market data for Treynor and Information ratios (use Nifty index as a proxy)
+            market_data = yf.download("^NSEI", start="2022-01-01", end="2024-01-01")['Adj Close']
+            
+            treynor_ratio = calculate_treynor_ratio(stock_data, market_data)
+            benchmark_data = yf.download("^NSEI", start="2022-01-01", end="2024-01-01")['Adj Close']
+            information_ratio = calculate_information_ratio(stock_data, benchmark_data)
+            turnover = calculate_portfolio_turnover(stock_data)
+
+            # Clear and update the performance placeholder dynamically
+            with performance_placeholder:
+                st.subheader("Real-Time Portfolio Performance Metrics")
+                st.write(f"Portfolio ROI: {portfolio_roi:.2%}")
+                st.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
+                st.write(f"Sortino Ratio: {sortino_ratio:.2f}")
+                st.write(f"Treynor Ratio: {treynor_ratio:.2f}")
+                st.write(f"Information Ratio: {information_ratio:.2f}")
+                st.write(f"Portfolio Turnover: {turnover:.2%}")
         
-        # Display Portfolio ROI
-        portfolio_roi = calculate_roi(stock_data)
-        st.write(f"Portfolio ROI: {portfolio_roi:.2%}")
-
-        # Display Sharpe Ratio
-        sharpe_ratio = calculate_sharpe_ratio(stock_data)
-        st.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
-
-        # Display Sortino Ratio
-        sortino_ratio = calculate_sortino_ratio(stock_data)
-        st.write(f"Sortino Ratio: {sortino_ratio:.2f}")
-
-        # Fetch market data for Treynor and Information ratios (use Nifty index as a proxy)
-        market_data = yf.download("^NSEI", start="2022-01-01", end="2024-01-01")['Adj Close']
-        
-        # Display Treynor Ratio
-        treynor_ratio = calculate_treynor_ratio(stock_data, market_data)
-        st.write(f"Treynor Ratio: {treynor_ratio:.2f}")
-        
-        # Display Information Ratio
-        benchmark_data = yf.download("^NSEI", start="2022-01-01", end="2024-01-01")['Adj Close']
-        information_ratio = calculate_information_ratio(stock_data, benchmark_data)
-        st.write(f"Information Ratio: {information_ratio:.2f}")
-
-        # Display Portfolio Turnover
-        turnover = calculate_portfolio_turnover(stock_data)
-        st.write(f"Portfolio Turnover: {turnover:.2%}")
-    else:
-        st.write("Please select stock symbols to calculate portfolio performance.")
+        # Wait for 30 seconds before refreshing data
+        time.sleep(30)
 
 # Run the app
 if __name__ == "__main__":
