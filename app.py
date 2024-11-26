@@ -54,6 +54,51 @@ def get_risk_color(risk_level):
     else:
         return "black"
 
+def calculate_risk_parameters(stock_symbols, file_path, risk_categories):
+    df = pd.read_excel(file_path)
+    results = []
+
+    # Loop through each stock symbol provided
+    for stock_symbol in stock_symbols:
+        stock_info = df[df['Stock Symbol'] == stock_symbol]
+
+        if stock_info.empty:
+            st.write(f"No data found for stock symbol: {stock_symbol}")
+            continue
+
+        stock_info = stock_info.iloc[0]
+
+        # Calculate risk parameters for the stock
+        for category, parameters in risk_categories.items():
+            for param, thresholds in parameters.items():
+                value = stock_info.get(param)
+                if value is not None:
+                    risk_level = categorize_risk(value, thresholds)
+                    description = get_parameter_description(param, risk_level)
+                    results.append({
+                        'Stock Symbol': stock_symbol,
+                        'Category': category,
+                        'Parameter': param,
+                        'Value': value,
+                        'Risk Level': risk_level,
+                        'Description': description,
+                        'Color': get_risk_color(risk_level)
+                    })
+                else:
+                    results.append({
+                        'Stock Symbol': stock_symbol,
+                        'Category': category,
+                        'Parameter': param,
+                        'Value': 'Data not available',
+                        'Risk Level': 'Data not available',
+                        'Description': '',
+                        'Color': 'black'
+                    })
+
+    # Convert the results to a pandas DataFrame
+    results_df = pd.DataFrame(results)
+    return results_df
+
 # Create a function to fetch inflation data and calculate the correlation
 def calculate_inflation_correlation(stock_symbols, inflation_data, start_date, end_date):
     """Calculates the correlation of stock returns with inflation."""
@@ -116,8 +161,40 @@ def display_dashboard():
 
         # Display risk data (same as before)
         risk_categories = {
-            # Same risk categories and thresholds as before
+            "Market Risk": {
+                "Volatility": (0.1, 0.2),
+                "Beta": (0.5, 1.5),
+                "Correlation with ^NSEI": (0.7, 1),
+            },
+            "Financial Risk": {
+                "debtToEquity": (0.5, 1.5),
+                "currentRatio": (1.5, 2),
+                "quickRatio": (1, 1.5),
+                "Profit Margins": (20, 30),
+                "returnOnAssets": (10, 20),
+                "returnOnEquity": (15, 25),
+            },
+            "Liquidity Risk": {
+                "Volume": (1_000_000, float('inf')),
+                "Average Volume": (500_000, 1_000_000),
+                "marketCap": (10_000_000_000, float('inf')),
+            },
+            "Credit Risk": {
+                "totalDebt": (0, float('inf')),
+                "debtToEquity": (0.5, 1.5),
+            },
+            "Operational Risk": {
+                "Profit Margins": (20, 30),
+                "CAGR": (20, 30),
+            },
+            "Portfolio Risk": {
+                "Maximum Drawdown": (15, 30),
+                "Annualized Volatility (%)": (15, 25),
+                "Sharpe Ratio": (1, 2),
+            },
         }
+
+        # Calculate the risk parameters for the selected stocks
         risk_data = calculate_risk_parameters(stock_symbols, file_path, risk_categories)
         st.write("Stock Risk Data", risk_data)
 
