@@ -1,148 +1,137 @@
-import pandas as pd
 import yfinance as yf
+import pandas as pd
+import numpy as np
 import streamlit as st
 
-# File path for the stock data and inflation data (ensure the file exists in the root directory)
-file_path = 'India Inflation CPI Consumer Price Index_IncomeStatement_correlation_results.xlsx'
-
-# Define the categorization function and helper methods
-def categorize_risk(value, thresholds):
-    """Categorizes risk based on predefined thresholds."""
-    try:
-        value = float(value)
-    except (ValueError, TypeError):
-        return "Data not available"
-
-    if value < thresholds[0]:
-        return "Good"
-    elif thresholds[0] <= value <= thresholds[1]:
-        return "Neutral"
-    else:
-        return "Bad"
-
-def get_parameter_description(param, risk_level):
-    """Returns the description for a given risk parameter based on risk level."""
-    descriptions = {
-        "Volatility": {
-            "Good": "Volatility is low, indicating less risk.",
-            "Neutral": "Volatility is moderate.",
-            "Bad": "Volatility is high, indicating more risk."
-        },
-        "Beta": {
-            "Good": "Beta is low, less sensitive to market movements.",
-            "Neutral": "Beta is moderate.",
-            "Bad": "Beta is high, indicating higher risk relative to the market."
-        },
-        "Profit Margins": {
-            "Good": "Profit margins are strong, indicating good financial health.",
-            "Neutral": "Profit margins are average.",
-            "Bad": "Profit margins are low, indicating potential financial issues."
-        },
-        "currentRatio": {
-            "Good": "Current ratio is strong, indicating good liquidity.",
-            "Neutral": "Current ratio is adequate.",
-            "Bad": "Current ratio is low, indicating liquidity issues."
-        },
-        # Add similar descriptions for other parameters as needed
-    }
-    return descriptions.get(param, {}).get(risk_level, "No description available.")
-
-def get_risk_color(risk_level):
-    """Returns the color associated with a risk level."""
-    if risk_level == "Good":
-        return "green"
-    elif risk_level == "Neutral":
-        return "yellow"
-    elif risk_level == "Bad":
-        return "red"
-    else:
-        return "black"
-
-# Function to calculate correlation with inflation using yfinance
-def get_inflation_correlation(stock_symbol):
-    inflation_data = {
-        "Sep-22": 6.488240065, "Oct-22": 6.084867894, "Nov-22": 5.409705648, "Dec-22": 5.502392344,
-        "Jan-23": 6.155075939, "Feb-23": 6.16, "Mar-23": 5.793650794, "Apr-23": 5.090054816, "May-23": 4.418604651,
-        "Jun-23": 5.572755418, "Jul-23": 7.544264819, "Aug-23": 6.912442396, "Sep-23": 5.02, "Oct-23": 4.87,
-        "Nov-23": 5.55, "Dec-23": 5.69, "Jan-24": 5.1, "Feb-24": 5.09, "Mar-24": 4.85, "Apr-24": 4.83,
-        "May-24": 4.75, "Jun-24": 5.08, "Jul-24": 3.54, "Aug-24": 3.65, "Sep-24": 5.49
-    }
+# Function to fetch stock data for multiple stocks
+def fetch_stock_data(stock_symbols, start_date="2022-01-01", end_date="2024-01-01"):
+    # Append .NS to Indian stock symbols
+    stock_symbols_ns = [symbol + ".NS" for symbol in stock_symbols]
     
-    # Fetch stock data for the selected stock symbol
-    stock_symbol_ns = stock_symbol + ".NS"  # Append ".NS" for Indian stocks
-    stock_data = yf.download(stock_symbol_ns, start="2022-09-01", end="2024-09-30", progress=False)
+    # Download stock data from Yahoo Finance
+    stock_data = yf.download(stock_symbols_ns, start=start_date, end=end_date)['Adj Close']
+    return stock_data
+
+# Function to calculate Portfolio Return on Investment (ROI)
+def calculate_roi(stock_data):
+    initial_value = stock_data.iloc[0]  # Price at the start of the period
+    final_value = stock_data.iloc[-1]  # Price at the end of the period
+    portfolio_roi = (final_value.sum() - initial_value.sum()) / initial_value.sum()
+    return portfolio_roi
+
+# Function to calculate Portfolio Sharpe Ratio
+def calculate_sharpe_ratio(stock_data, risk_free_rate=0.05):
+    # Calculate daily returns
+    daily_returns = stock_data.pct_change().mean(axis=1)
     
-    # If stock data is empty or insufficient
-    if stock_data.empty:
-        return "No data available"
+    # Calculate excess returns over the risk-free rate
+    excess_returns = daily_returns - (risk_free_rate / 252)  # Annualized risk-free rate divided by 252 trading days
     
-    # Compute correlation with inflation (monthly returns)
-    inflation_series = pd.Series(inflation_data)
-    stock_monthly_returns = stock_data['Adj Close'].resample('M').ffill().pct_change().dropna()
+    # Calculate the standard deviation (volatility) of excess returns
+    volatility = daily_returns.std() * np.sqrt(252)  # Annualized standard deviation
     
-    # Align both data series by their index (date)
-    aligned_data = pd.concat([stock_monthly_returns, inflation_series], axis=1).dropna()
-    aligned_data.columns = ['Stock Return', 'Inflation']
+    # Sharpe ratio: excess returns / volatility
+    sharpe_ratio = excess_returns.mean() / volatility
+    return sharpe_ratio
+
+# Function to calculate Sortino Ratio
+def calculate_sortino_ratio(stock_data, risk_free_rate=0.05):
+    # Calculate daily returns
+    daily_returns = stock_data.pct_change().mean(axis=1)
     
-    # Calculate correlation
-    correlation = aligned_data['Stock Return'].corr(aligned_data['Inflation'])
+    # Calculate downside deviation (only negative returns are considered)
+    negative_returns = daily_returns[daily_returns < 0]
+    downside_deviation = negative_returns.std() * np.sqrt(252)
     
-    return correlation
+    # Calculate excess returns over the risk-free rate
+    excess_returns = daily_returns - (risk_free_rate / 252)
+    
+    # Sortino ratio: excess returns / downside deviation
+    sortino_ratio = excess_returns.mean() / downside_deviation
+    return sortino_ratio
 
-# Function to display financial data for selected stocks
-def display_income_statement_data(selected_stocks):
-    # Read the data from the Excel file
-    df = pd.read_excel(file_path)
+# Function to calculate Treynor Ratio
+def calculate_treynor_ratio(stock_data, market_data, risk_free_rate=0.05):
+    # Calculate daily returns for the portfolio
+    portfolio_returns = stock_data.pct_change().mean(axis=1)
+    
+    # Calculate beta of the portfolio with respect to the market (using covariance and variance)
+    covariance = np.cov(portfolio_returns, market_data.pct_change())[0][1]
+    market_variance = np.var(market_data.pct_change())
+    beta = covariance / market_variance
+    
+    # Calculate excess returns
+    excess_returns = portfolio_returns.mean() - (risk_free_rate / 252)
+    
+    # Treynor ratio: excess return / beta
+    treynor_ratio = excess_returns / beta
+    return treynor_ratio
 
-    # Check if the selected stock exists in the data and filter it
-    filtered_data = df[df['Stock Name'].isin(selected_stocks)]
+# Function to calculate Information Ratio
+def calculate_information_ratio(stock_data, benchmark_data):
+    # Calculate daily returns for the portfolio and benchmark
+    portfolio_returns = stock_data.pct_change().mean(axis=1)
+    benchmark_returns = benchmark_data.pct_change()
+    
+    # Calculate tracking error (standard deviation of excess returns)
+    excess_returns = portfolio_returns - benchmark_returns
+    tracking_error = excess_returns.std() * np.sqrt(252)
+    
+    # Information ratio: excess return / tracking error
+    information_ratio = excess_returns.mean() / tracking_error
+    return information_ratio
 
-    if filtered_data.empty:
-        st.write("No data found for the selected stocks.")
-    else:
-        # Display the filtered data in a readable table format
-        st.write("Selected Stock Data", filtered_data[['Stock Name',
-                                                       'June 2024 Total Revenue/Income',
-                                                       'June 2024 Total Operating Expense',
-                                                       'June 2024 Operating Income/Profit',
-                                                       'June 2024 EBITDA',
-                                                       'June 2024 EBIT',
-                                                       'June 2024 Income/Profit Before Tax',
-                                                       'June 2024 Net Income From Continuing Operation',
-                                                       'June 2024 Net Income',
-                                                       'June 2024 Net Income Applicable to Common Share',
-                                                       'June 2024 EPS (Earning Per Share)',
-                                                       'Correlation with Total Revenue/Income',
-                                                       'Correlation with Total Operating Expense',
-                                                       'Correlation with Operating Income/Profit',
-                                                       'Correlation with EBITDA',
-                                                       'Correlation with EBIT',
-                                                       'Correlation with Income/Profit Before Tax',
-                                                       'Correlation with Net Income From Continuing Operation',
-                                                       'Correlation with Net Income',
-                                                       'Correlation with Net Income Applicable to Common Share',
-                                                       'Correlation with EPS (Earning Per Share)']])
+# Function to calculate Portfolio Turnover
+def calculate_portfolio_turnover(stock_data):
+    # Calculate daily returns and identify changes in portfolio allocations
+    daily_returns = stock_data.pct_change().abs()
+    
+    # Turnover is the sum of absolute changes in allocation
+    turnover = daily_returns.sum() / len(stock_data)
+    return turnover
 
-# Create a function to display the Streamlit dashboard
-def display_dashboard():
-    st.title('Stock Risk Dashboard')
+# Main function to calculate and display the portfolio performance
+def display_portfolio_performance():
+    st.title('Portfolio Performance Dashboard')
 
-    # Read the stock data from the pre-defined Excel file for the risk categories
-    df = pd.read_excel(file_path)
+    # Get stock symbols as input
+    stock_symbols = st.multiselect("Select Stock Symbols", ["TCS", "INFY", "RELIANCE", "HDFC", "BAJFINANCE", "ICICIBANK"])
 
-    # Get stock symbols input from the user
-    stock_symbols = st.multiselect("Select Stock Symbols", df['Stock Name'].unique())
-
+    # Check if user has selected any stocks
     if len(stock_symbols) > 0:
-        # Display data for the selected stocks
-        display_income_statement_data(stock_symbols)
+        # Fetch stock data
+        stock_data = fetch_stock_data(stock_symbols)
+        
+        # Display Portfolio ROI
+        portfolio_roi = calculate_roi(stock_data)
+        st.write(f"Portfolio ROI: {portfolio_roi:.2%}")
 
-        # Display correlation of selected stocks with inflation
-        st.write("Stock Correlation with Inflation:")
-        for stock_symbol in stock_symbols:
-            correlation = get_inflation_correlation(stock_symbol)
-            st.write(f"{stock_symbol}: {correlation}")
+        # Display Sharpe Ratio
+        sharpe_ratio = calculate_sharpe_ratio(stock_data)
+        st.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
 
-# Run the dashboard
+        # Display Sortino Ratio
+        sortino_ratio = calculate_sortino_ratio(stock_data)
+        st.write(f"Sortino Ratio: {sortino_ratio:.2f}")
+
+        # Fetch market data for Treynor and Information ratios (use Nifty index as a proxy)
+        market_data = yf.download("^NSEI", start="2022-01-01", end="2024-01-01")['Adj Close']
+        
+        # Display Treynor Ratio
+        treynor_ratio = calculate_treynor_ratio(stock_data, market_data)
+        st.write(f"Treynor Ratio: {treynor_ratio:.2f}")
+        
+        # Display Information Ratio
+        benchmark_data = yf.download("^NSEI", start="2022-01-01", end="2024-01-01")['Adj Close']
+        information_ratio = calculate_information_ratio(stock_data, benchmark_data)
+        st.write(f"Information Ratio: {information_ratio:.2f}")
+
+        # Display Portfolio Turnover
+        turnover = calculate_portfolio_turnover(stock_data)
+        st.write(f"Portfolio Turnover: {turnover:.2%}")
+    else:
+        st.write("Please select stock symbols to calculate portfolio performance.")
+
+# Run the app
 if __name__ == "__main__":
-    display_dashboard()
+    display_portfolio_performance()
