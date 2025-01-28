@@ -105,7 +105,7 @@ def display_portfolio_performance():
     stock_symbols = st.multiselect("Select Stock Symbols", ["TCS", "INFY", "RELIANCE", "HDFC", "BAJFINANCE", "ICICIBANK"])
 
     # Load the existing Excel information
-    excel_file = "India_Inflation_CPI_Consumer_Price_Index_IncomeStatement_correlation_results.xlsx"
+    excel_file = "India Inflation CPI Consumer Price Index_event_stock_analysis_resultsOct.xlsx"
     df_excel = load_excel_data(excel_file)
     st.subheader("Stock Correlations from Excel Data")
     st.dataframe(df_excel)
